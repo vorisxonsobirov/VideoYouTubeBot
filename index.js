@@ -30,18 +30,24 @@ bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text;
 
+  // Пропускаем команды
   if (!text || text.startsWith('/')) return;
 
+  // Проверка на ссылку
   if (text.includes('youtube.com') || text.includes('youtu.be')) {
     bot.sendMessage(chatId, '⏳ Скачиваю видео, подожди немного...');
 
     const timestamp = Date.now();
     const filePath = path.join(downloadDir, `video_${timestamp}.mp4`);
 
-    // Важно: путь к yt-dlp и файл должен быть в кавычках
-    const command = `"${ytDlpPath}" -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]" -o "${filePath}" "${text}"`;
+    // Формат 18 — это mp4 360p (наиболее совместимый с Telegram)
+    const command = `"${ytDlpPath}" -f 18 -o "${filePath}" "${text}"`;
+    console.log('📥 Выполняется команда:', command);
 
     exec(command, async (error, stdout, stderr) => {
+      console.log('📤 STDOUT:', stdout);
+      console.log('📥 STDERR:', stderr);
+
       if (error) {
         console.error('❌ Ошибка при скачивании:', error.message);
         bot.sendMessage(chatId, '❌ Не удалось скачать видео. Проверь ссылку или попробуй другое видео.');
@@ -54,13 +60,21 @@ bot.on('message', async (msg) => {
       }
 
       try {
-        await bot.sendVideo(chatId, filePath);
-        bot.sendMessage(chatId, '✅ Готово!');
+        const stats = fs.statSync(filePath);
+        const fileSizeMB = stats.size / (1024 * 1024);
+        console.log(`📦 Размер видео: ${fileSizeMB.toFixed(2)} МБ`);
+
+        if (fileSizeMB > 49) {
+          bot.sendMessage(chatId, '⚠️ Видео слишком большое для отправки в Telegram (более 50 МБ).');
+        } else {
+          await bot.sendVideo(chatId, filePath);
+          bot.sendMessage(chatId, '✅ Готово!');
+        }
       } catch (err) {
         console.error('❌ Ошибка при отправке видео:', err.message);
         bot.sendMessage(chatId, '❌ Ошибка при отправке видео: ' + err.message);
       } finally {
-        fs.unlink(filePath, () => {}); // удаляем файл
+        fs.unlink(filePath, () => {}); // удаляем файл после отправки
       }
     });
   } else {
@@ -68,7 +82,7 @@ bot.on('message', async (msg) => {
   }
 });
 
-// Ошибки
+// Обработка ошибок
 bot.on('polling_error', (error) => {
   console.error('Polling error:', error.message);
 });
