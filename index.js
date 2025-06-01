@@ -5,6 +5,12 @@ const path = require('path');
 const { exec } = require('child_process');
 
 const token = process.env.BOT_TOKEN;
+
+if (!token) {
+  console.error("❌ BOT_TOKEN не найден в .env файле");
+  process.exit(1);
+}
+
 const bot = new TelegramBot(token, { polling: true });
 
 const downloadDir = path.resolve(__dirname, 'downloads');
@@ -12,13 +18,14 @@ if (!fs.existsSync(downloadDir)) {
   fs.mkdirSync(downloadDir, { recursive: true });
 }
 
-// Абсолютный путь к yt-dlp.exe (предполагается, что он в той же папке, что и index.js)
 const ytDlpPath = path.resolve(__dirname, 'yt-dlp.exe');
 
+// /start команда
 bot.onText(/\/start/, (msg) => {
   bot.sendMessage(msg.chat.id, '👋 Привет! Отправь ссылку на видео с YouTube, и я его скачаю!');
 });
 
+// обработка всех сообщений
 bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text;
@@ -28,16 +35,16 @@ bot.on('message', async (msg) => {
   if (text.includes('youtube.com') || text.includes('youtu.be')) {
     bot.sendMessage(chatId, '⏳ Скачиваю видео, подожди немного...');
 
-    // Формируем путь для сохранения файла
-    const filePath = path.join(downloadDir, `video_${Date.now()}.mp4`);
+    const timestamp = Date.now();
+    const filePath = path.join(downloadDir, `video_${timestamp}.mp4`);
 
-    // Формируем команду с кавычками для путей
-    const command = `"${ytDlpPath}" -f "best[ext=mp4]" -o "${filePath}" "${text}"`;
+    // Важно: путь к yt-dlp и файл должен быть в кавычках
+    const command = `"${ytDlpPath}" -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]" -o "${filePath}" "${text}"`;
 
     exec(command, async (error, stdout, stderr) => {
       if (error) {
-        console.error('Ошибка при скачивании:', error.message);
-        bot.sendMessage(chatId, '❌ Не удалось скачать видео. Возможно, ссылка неверна или видео слишком большое.');
+        console.error('❌ Ошибка при скачивании:', error.message);
+        bot.sendMessage(chatId, '❌ Не удалось скачать видео. Проверь ссылку или попробуй другое видео.');
         return;
       }
 
@@ -50,9 +57,10 @@ bot.on('message', async (msg) => {
         await bot.sendVideo(chatId, filePath);
         bot.sendMessage(chatId, '✅ Готово!');
       } catch (err) {
+        console.error('❌ Ошибка при отправке видео:', err.message);
         bot.sendMessage(chatId, '❌ Ошибка при отправке видео: ' + err.message);
       } finally {
-        fs.unlinkSync(filePath); // Удаляем видео после отправки
+        fs.unlink(filePath, () => {}); // удаляем файл
       }
     });
   } else {
@@ -60,9 +68,11 @@ bot.on('message', async (msg) => {
   }
 });
 
+// Ошибки
 bot.on('polling_error', (error) => {
   console.error('Polling error:', error.message);
 });
+
 bot.on('error', (error) => {
   console.error('Bot error:', error.message);
 });
